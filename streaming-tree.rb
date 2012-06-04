@@ -20,8 +20,24 @@ class StreamingTree < Controller
 					lines[1..-1].each do |line|
 						info line
 					end
+				else
+					flood dpid, message
 				end
+			else
+				flood dpid, message
 			end
+		else
+			flood dpid, message
 		end
+	end
+
+	private
+
+	def flood dpid, message
+		send_packet_out(
+			dpid,
+			:packet_in => message,
+			:actions => ActionOutput.new( :port => OFPP_FLOOD )
+		)
 	end
 end
