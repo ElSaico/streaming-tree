@@ -1,43 +1,55 @@
+require "set"
+
 class StreamingTree < Controller
 	def start
 		info "Iniciando módulo streaming-tree"
-		@urls = {
-			"rtsp://127.0.0.1/stream.sdp" => "example"
-		}
-		@groups = Hash.new
+		@groups = Hash.new do | hash, key |
+			hash[key] = Set.new
+		end
 	end
 
 	def packet_in dpid, message
-		if message.udp?
-			lines = message.udp_payload.lines('\r\n')
-			if lines[0] =~ /^([A-Z]+) (.*) RTSP\/1\.0\r\n$/
-				method = $1
-				uri = $2
-				info method
-				info uri
-				if @urls.member?(uri)
-					new_payload = [lines[0]]
-					lines[1..-1].each do |line|
-						info line
-					end
-				else
-					flood dpid, message
-				end
-			else
-				flood dpid, message
-			end
+		if message.igmp?
+			handle_igmp message
 		else
-			flood dpid, message
+			group = members message.ipv4_daddr
+			if group.empty?
+				flood_out dpid, message
+			else
+				# RPF!
+			end
 		end
 	end
 
 	private
 
-	def flood dpid, message
+	def handle_igmp message
+		group = members message.igmp_group
+		source = message.macsa
+		if message.igmp_v2_membership_report?
+			group.add(source)
+		elsif message.igmp_v2_leave_group?
+			group.delete(source)
+		end
+	end
+
+	def flood_mod dpid, message
+		send_flow_mod_add(
+			dpid,
+			:match => ExactMatch.from(message),
+			:actions => ActionOutput.new( :port => OFPP_FLOOD )
+		)
+	end
+
+	def flood_out dpid, message
 		send_packet_out(
 			dpid,
 			:packet_in => message,
 			:actions => ActionOutput.new( :port => OFPP_FLOOD )
 		)
+	end
+
+	def members group
+		@groups[group.to_i]
 	end
 end
