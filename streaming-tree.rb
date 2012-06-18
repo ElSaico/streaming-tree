@@ -32,6 +32,8 @@ class StreamingTree < Controller
 	def packet_in dpid, message
 		if message.igmp?
 			handle_igmp dpid, message
+		elsif !message.ipv4?
+			flood_out dpid, message
 		else
 			group = message.ipv4_daddr
 			if members(group).empty?
