@@ -69,17 +69,21 @@ class StreamingTree < Controller
 
 	# TODO: se porta aponta para host final que não é membro do grupo (como descobrir?), apaga/não adiciona fluxo
 	def flood_mod dpid, group, message
-		@ports[dpid].each{ |port|
-			if port != message.in_port
-				send_flow_mod_add(
-					dpid,
-					:match => ExactMatch.from(message),
-					:actions => ActionOutput.new( :port => port )
-				)
-				@datapath_out[dpid][group].add(port)
-			end
-		}
+		group_ports = @datapath_out[dpid][group]
+		group_ports.merge(@ports[dpid])
+		group_ports.remove(message.in_port)
+		send_flow_mod_add(
+			dpid,
+			:match => ExactMatch.from(message),
+			:actions => group_output(group_ports)
+		)
 		flood_out dpid, message
+	end
+
+	def group_output ports
+		group_ports.collect do |port|
+			ActionOutput.new(:port => port)
+		end
 	end
 
 	def flood_out dpid, message
@@ -94,9 +98,9 @@ class StreamingTree < Controller
 		#parent_dpid = ???
 		#parent_port = ???
 		#parent_match = ???
-		send_flow_mod_delete(parent_dpid, :match => match)
-		@datapath_out[parent_dpid][group].remove(parent_port)
-		if @datapath_out[parent_dpid][group].empty?
+		group_ports = @datapath_out[parent_dpid][group]
+		group_ports.remove(parent_port)
+		if group_ports.empty?
 			prune_flow parent_dpid, group, parent_match
 		end
 	end
