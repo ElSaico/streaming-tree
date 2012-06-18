@@ -42,7 +42,7 @@ class StreamingTree < Controller
 				flood_out dpid, message
 			else
 				if @datapath_in.member? dpid
-					"DEBUG #{dpid} via #{message.macsa} - message already received; prune!"
+					info "DEBUG #{dpid} via #{message.macsa} - message already received; prune!"
 					match = ExactMatch.from(message)
 					prune_flow dpid, group, match
 				else
@@ -62,15 +62,25 @@ class StreamingTree < Controller
 	private
 
 	def handle_igmp dpid, message
-		group = members message.igmp_group
-		if message.igmp_v1_membership_report? \
-		  || message.igmp_v2_membership_report? \
-		  || message.igmp_v3_membership_report?
+		if message.igmp_v3_membership_report?
+			# o framework NÃO tem suporte decente a IGMPv3. e não avisa.
+			igmp_group = message.data[46..-1].unpack("CCnN") # iterar?
+			group = members igmp_group[3]
+			if igmp_group[0] == 4 # join
+				group.add(dpid)
+				info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} joined group #{igmp_group[3].to_hex}"
+			elsif igmp_group[0] == 3 # leave
+				group.delete(dpid)
+				info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} left group #{igmp_group[3].to_hex}"
+			end
+		elsif message.igmp_v2_membership_report?
+			group = members message.igmp_group
 			group.add(dpid)
-			info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} joined group #{message.igmp_group.to_i}"
+			info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} joined group #{message.igmp_group}"
 		elsif message.igmp_v2_leave_group?
+			group = members message.igmp_group
 			group.delete(dpid)
-			info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} left group #{message.igmp_group.to_i}"
+			info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} left group #{message.igmp_group}"
 		end
 	end
 
@@ -114,6 +124,6 @@ class StreamingTree < Controller
 	end
 
 	def members group
-		@groups[group.to_i & 0x00FFFFFF] # message.igmp_group não tem o primeiro octeto
+		@groups[group.to_i]
 	end
 end
