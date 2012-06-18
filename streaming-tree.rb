@@ -40,7 +40,8 @@ class StreamingTree < Controller
 				flood_out dpid, message
 			else
 				if @datapath_in.member? dpid
-					delete_flow dpid, group, message
+					match = ExactMatch.from(message)
+					prune_flow dpid, group, match
 				else
 					@datapath_in[dpid] = true
 					flood_mod dpid, group, message
@@ -89,9 +90,14 @@ class StreamingTree < Controller
 		)
 	end
 
-	def delete_flow dpid, group, message
-		if @datapath_out[dpid][group].empty?
-			# apaga fluxo de chegada (recursivamente)
+	def prune_flow dpid, group, match
+		#parent_dpid = ???
+		#parent_port = ???
+		#parent_match = ???
+		send_flow_mod_delete(parent_dpid, :match => match)
+		@datapath_out[parent_dpid][group].remove(parent_port)
+		if @datapath_out[parent_dpid][group].empty?
+			prune_flow parent_dpid, group, parent_match
 		end
 	end
 
