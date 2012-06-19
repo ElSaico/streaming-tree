@@ -30,19 +30,20 @@ class StreamingTree < Controller
 	end
 
 	def packet_in dpid, message
+		dpid_repr = dpid.to_s.rjust(2, '0')
 		if message.igmp?
 			handle_igmp dpid, message
 		elsif !message.ipv4?
 			flood_out dpid, message
 		else
 			group = message.ipv4_daddr
-			info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} -> #{message.ipv4_daddr}"
+			info "DEBUG #{dpid_repr} via #{message.macsa} - #{message.ipv4_saddr} -> #{message.ipv4_daddr}"
 			if members(group).empty?
-				info "DEBUG #{dpid.to_hex} via #{message.macsa} - not a registered group; flood!"
+				info "DEBUG #{dpid_repr} via #{message.macsa} - not a registered group; flood!"
 				flood_out dpid, message
 			else
 				if @datapath_in[dpid].member? group
-					info "DEBUG #{dpid.to_hex} via #{message.macsa} - message already received; prune!"
+					info "DEBUG #{dpid_repr} via #{message.macsa} - message already received; prune!"
 					match = ExactMatch.from(message)
 					prune_flow dpid, group, match
 				else
@@ -63,38 +64,40 @@ class StreamingTree < Controller
 	private
 
 	def handle_igmp dpid, message
+		dpid_repr = dpid.to_s.rjust(2, '0')
 		if message.igmp_v3_membership_report?
 			# o framework NÃO tem suporte decente a IGMPv3. e não avisa.
 			igmp_group = message.data[46..-1].unpack("CCnN") # iterar?
 			group = members igmp_group[3]
 			if igmp_group[0] == 4 # join
 				group.add(dpid)
-				info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} joined group #{igmp_group[3].to_hex}"
+				info "DEBUG #{dpid_repr} via #{message.macsa} - #{message.ipv4_saddr} joined group #{igmp_group[3].to_hex}"
 			elsif igmp_group[0] == 3 # leave
 				group.delete(dpid)
-				info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} left group #{igmp_group[3].to_hex}"
+				info "DEBUG #{dpid_repr} via #{message.macsa} - #{message.ipv4_saddr} left group #{igmp_group[3].to_hex}"
 			end
 		elsif message.igmp_v2_membership_report?
 			group = members message.igmp_group
 			group.add(dpid)
-			info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} joined group #{message.igmp_group}"
+			info "DEBUG #{dpid_repr} via #{message.macsa} - #{message.ipv4_saddr} joined group #{message.igmp_group}"
 		elsif message.igmp_v2_leave_group?
 			group = members message.igmp_group
 			group.delete(dpid)
-			info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} left group #{message.igmp_group}"
+			info "DEBUG #{dpid_repr} via #{message.macsa} - #{message.ipv4_saddr} left group #{message.igmp_group}"
 		end
 	end
 
 	# TODO: se porta aponta para host final que não é membro do grupo (como descobrir?), apaga/não adiciona fluxo
 	def flood_mod dpid, group, message
+		dpid_repr = dpid.to_s.rjust(2, '0')
 		group_ports = @datapath_out[dpid][group]
 		group_ports.merge(@ports[dpid])
 		group_ports.delete(message.in_port)
-		info "DEBUG #{dpid.to_hex}: added flows (#{group_ports.to_a.join(', ')})"
+		info "DEBUG #{dpid_repr} - added flows (#{group_ports.to_a.join(', ')})"
 		send_flow_mod_add(
 			dpid,
 			:match => ExactMatch.from(message),
-			:hard_timeout => 10,
+			:hard_timeout => 60,
 			:actions => group_output(group_ports)
 		)
 		flood_out dpid, message
