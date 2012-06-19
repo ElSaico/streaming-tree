@@ -93,6 +93,7 @@ class StreamingTree < Controller
 		group_ports = @datapath_out[dpid][group]
 		group_ports.merge(@ports[dpid])
 		group_ports.delete(message.in_port)
+		group_ports.delete(65534) # porta do controlador
 		info "DEBUG #{dpid_repr} - added flows (#{group_ports.to_a.join(', ')})"
 		send_flow_mod_add(
 			dpid,
