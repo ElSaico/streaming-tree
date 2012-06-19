@@ -44,8 +44,8 @@ class StreamingTree < Controller
 			else
 				if @datapath_in[dpid].member? group
 					info "DEBUG #{dpid_repr} via #{message.in_port} - message already received; prune!"
-					match = ExactMatch.from(message)
-					prune_flow dpid, group, match
+					#match = ExactMatch.from(message)
+					#prune_flow dpid, group, match
 				else
 					@datapath_in[dpid].add(group)
 					flood_mod dpid, group, message
@@ -70,19 +70,19 @@ class StreamingTree < Controller
 			igmp_group = message.data[46..-1].unpack("CCnN") # iterar?
 			group = members igmp_group[3]
 			if igmp_group[0] == 4 # join
-				group.add(dpid)
+				group.add(message.macsa)
 				info "DEBUG #{dpid_repr} via #{message.in_port} - #{message.ipv4_saddr} joined group #{igmp_group[3].to_hex}"
 			elsif igmp_group[0] == 3 # leave
-				group.delete(dpid)
+				group.delete(message.macsa)
 				info "DEBUG #{dpid_repr} via #{message.in_port} - #{message.ipv4_saddr} left group #{igmp_group[3].to_hex}"
 			end
 		elsif message.igmp_v2_membership_report?
 			group = members message.igmp_group
-			group.add(dpid)
+			group.add(message.macsa)
 			info "DEBUG #{dpid_repr} via #{message.in_port} - #{message.ipv4_saddr} joined group #{message.igmp_group}"
 		elsif message.igmp_v2_leave_group?
 			group = members message.igmp_group
-			group.delete(dpid)
+			group.delete(message.macsa)
 			info "DEBUG #{dpid_repr} via #{message.in_port} - #{message.ipv4_saddr} left group #{message.igmp_group}"
 		end
 	end
@@ -90,6 +90,7 @@ class StreamingTree < Controller
 	# TODO: se porta aponta para host final que não é membro do grupo (como descobrir?), apaga/não adiciona fluxo
 	def flood_mod dpid, group, message
 		dpid_repr = dpid.to_s.rjust(2, '0')
+		mac = Mac.new(dpid & 0xffffffffff) # mac do switch = 48 bits menos significativos do datapath_id
 		group_ports = @datapath_out[dpid][group]
 		group_ports.merge(@ports[dpid])
 		group_ports.delete(message.in_port)
@@ -99,13 +100,18 @@ class StreamingTree < Controller
 			dpid,
 			:match => ExactMatch.from(message),
 			:hard_timeout => 60,
-			:actions => group_output(group_ports)
+			:actions => group_output(group_ports, mac)
 		)
-		flood_out dpid, message
+		send_packet_out(
+			dpid,
+			:packet_in => message,
+			:actions => group_output(group_ports, mac)
+		)
 	end
 
-	def group_output group_ports
+	def group_output group_ports, mac
 		group_ports.collect do |port|
+			ActionSetDlDst.new(:dl_dst => mac)
 			ActionOutput.new(:port => port)
 		end
 	end
