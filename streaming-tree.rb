@@ -41,12 +41,12 @@ class StreamingTree < Controller
 				info "DEBUG #{dpid.to_hex} via #{message.macsa} - not a registered group; flood!"
 				flood_out dpid, message
 			else
-				if @datapath_in.member? dpid
+				if @datapath_in[dpid].member? group
 					info "DEBUG #{dpid.to_hex} via #{message.macsa} - message already received; prune!"
 					match = ExactMatch.from(message)
 					prune_flow dpid, group, match
 				else
-					@datapath_in[dpid] = true
+					@datapath_in[dpid].add(group)
 					flood_mod dpid, group, message
 				end
 			end
@@ -54,8 +54,9 @@ class StreamingTree < Controller
 	end
 
 	def flow_removed dpid, message
-		if message.reason != OFPRR_DELETE
-			@datapath_in[dpid] = false
+		if message.reason != 2
+			group = message.match.nw_dst
+			@datapath_in[dpid].delete(group)
 		end
 	end
 
@@ -93,6 +94,7 @@ class StreamingTree < Controller
 		send_flow_mod_add(
 			dpid,
 			:match => ExactMatch.from(message),
+			:hard_timeout => 10,
 			:actions => group_output(group_ports)
 		)
 		flood_out dpid, message
