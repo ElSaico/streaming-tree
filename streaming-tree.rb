@@ -36,13 +36,13 @@ class StreamingTree < Controller
 			flood_out dpid, message
 		else
 			group = message.ipv4_daddr
-			info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} -> #{message.ipv4_daddr}"
+			info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} -> #{message.ipv4_daddr}"
 			if members(group).empty?
-				info "DEBUG #{dpid} - flood"
+				info "DEBUG #{dpid.to_hex} via #{message.macsa} - not a registered group; flood!"
 				flood_out dpid, message
 			else
 				if @datapath_in.member? dpid
-					info "DEBUG #{dpid} via #{message.macsa} - message already received; prune!"
+					info "DEBUG #{dpid.to_hex} via #{message.macsa} - message already received; prune!"
 					match = ExactMatch.from(message)
 					prune_flow dpid, group, match
 				else
@@ -68,19 +68,19 @@ class StreamingTree < Controller
 			group = members igmp_group[3]
 			if igmp_group[0] == 4 # join
 				group.add(dpid)
-				info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} joined group #{igmp_group[3].to_hex}"
+				info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} joined group #{igmp_group[3].to_hex}"
 			elsif igmp_group[0] == 3 # leave
 				group.delete(dpid)
-				info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} left group #{igmp_group[3].to_hex}"
+				info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} left group #{igmp_group[3].to_hex}"
 			end
 		elsif message.igmp_v2_membership_report?
 			group = members message.igmp_group
 			group.add(dpid)
-			info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} joined group #{message.igmp_group}"
+			info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} joined group #{message.igmp_group}"
 		elsif message.igmp_v2_leave_group?
 			group = members message.igmp_group
 			group.delete(dpid)
-			info "DEBUG #{dpid} via #{message.macsa} - #{message.ipv4_saddr} left group #{message.igmp_group}"
+			info "DEBUG #{dpid.to_hex} via #{message.macsa} - #{message.ipv4_saddr} left group #{message.igmp_group}"
 		end
 	end
 
@@ -89,7 +89,7 @@ class StreamingTree < Controller
 		group_ports = @datapath_out[dpid][group]
 		group_ports.merge(@ports[dpid])
 		group_ports.delete(message.in_port)
-		info "DEBUG #{dpid}: added flows (#{group_ports.to_a.join(', ')})"
+		info "DEBUG #{dpid.to_hex}: added flows (#{group_ports.to_a.join(', ')})"
 		send_flow_mod_add(
 			dpid,
 			:match => ExactMatch.from(message),
